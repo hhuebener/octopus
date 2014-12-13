@@ -52,6 +52,7 @@ module scf_m
   use preconditioners_m
   use profiling_m
   use restart_m
+  use scdm_m
   use simul_box_m
   use smear_m
   use species_m

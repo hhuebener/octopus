@@ -108,7 +108,7 @@ contains
     !%End
 
     call parse_integer(datasets_check('CurrentDensity'), CURRENT_GRADIENT, this%method)
-    if(.not.varinfo_valid_option('CurrentDensity', this%method)) call input_error('CurrentDensity')
+!    if(.not.varinfo_valid_option('CurrentDensity', this%method)) call input_error('CurrentDensity')
     if(this%method /= CURRENT_GRADIENT) &
       call messages_experimental("CurrentDensity /= gradient")
 

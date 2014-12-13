@@ -51,6 +51,7 @@ module td_m
   use profiling_m
   use projector_m
   use restart_m
+  use scdm_m
   use scf_m
   use simul_box_m
   use species_m
