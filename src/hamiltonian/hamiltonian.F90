@@ -15,7 +15,7 @@
 !! Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 !! 02110-1301, USA.
 !!
-!! $Id: hamiltonian.F90 12633 2014-11-23 21:51:11Z adelgado $
+!! $Id: hamiltonian.F90 12406 2014-08-20 11:03:12Z umberto $
 
 #include "global.h"
 
@@ -54,11 +54,13 @@ module hamiltonian_m
   use octcl_kernel_m
   use opencl_m
   use parser_m
+  use par_vec_m
   use poisson_m
   use profiling_m
   use projector_m
   use pcm_m
   use restart_m
+  use scdm_m
   use simul_box_m
   use smear_m
   use species_m
@@ -107,6 +109,8 @@ module hamiltonian_m
     hamiltonian_apply_packed,        &
     dexchange_operator,              &
     zexchange_operator,              &
+    dscdm_exchange_operator,              &
+    zscdm_exchange_operator,              &
     dhamiltonian_phase,              &
     zhamiltonian_phase,              &
     zhamiltonian_dervexternal,       &
@@ -168,6 +172,8 @@ module hamiltonian_m
 
     !> For the Hartree-Fock Hamiltonian, the Fock operator depends on the states.
     type(states_t), pointer :: hf_st
+!
+    logical :: EXX
 
     !> There may be an "inhomogeneous", "source", or "forcing" term (useful for the OCT formalism)
     logical :: inh_term
@@ -417,7 +423,7 @@ contains
     !% This is due to the setup of semi-infinite finite width leads connected to the sides.
     !% Warning: This scheme works only with the special Crank-Nicolson propagator and has
     !% quadratic scaling with time. It may be tuned with the parameter <tt>OpenBoundariesMaxMemCoeffs</tt>.
-    !%End
+   !%End
     call parse_integer(datasets_check('AbsorbingBoundaries'), NOT_ABSORBING, hm%ab)
     if(.not.varinfo_valid_option('AbsorbingBoundaries', hm%ab)) call input_error('AbsorbingBoundaries')
     call messages_print_var_option(stdout, "AbsorbingBoundaries", hm%ab)
@@ -496,6 +502,10 @@ contains
     call parse_logical(datasets_check('StatesPack'), .true., hm%apply_packed)
 
     call pcm_init(hm%pcm, geo, gr)  !< initializes PCM 
+!HH
+    call parse_logical('EXX', .false., hm%EXX)
+    if(hm%EXX) call  messages_print_stress(stdout,'----HH: Using SCDM exact-exchange----')
+!HH end
 
     call profiling_out(prof)
     POP_SUB(hamiltonian_init)
@@ -1248,6 +1258,11 @@ contains
      !! during the SCF calculation.
      call v_nuclei_cav(this%pcm%v_n, geo, this%pcm%tess, this%pcm%n_tesserae)
      call pcm_charges(this%pcm%q_n, this%pcm%qtot_n, this%pcm%v_n, this%pcm%matrix, this%pcm%n_tesserae)
+
+     write(this%pcm%info_unit,'(1X,A33,F12.8)') &
+                           "Nuclear molecular charge Q_M^n = ", &
+                           -( this%pcm%epsilon_0/(this%pcm%epsilon_0 - M_ONE) )*this%pcm%qtot_n
+
      call pcm_pot_rs( this%pcm%v_n_rs, this%pcm%q_n, this%pcm%tess, this%pcm%n_tesserae, gr%mesh, this%pcm%gaussian_width )
     endif
 

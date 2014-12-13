@@ -134,6 +134,14 @@ contains
         call messages_write("Run a DFT or HF calculation first")
         call messages_fatal()
       else
+! HH                                                                                                    
+if(hm%EXX) then
+   print *, 'HH: coying state object before LCAO'
+   if(.not.associated(hm%hf_st)) then
+      hm%hf_st => sys%st
+   endif
+endif
+
         call lcao_run(sys, hm, lmm_r = scfv%lmm_r)
       endif
     else

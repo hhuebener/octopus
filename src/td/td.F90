@@ -236,6 +236,10 @@ contains
       !Apply mask absorbing boundaries
       if(hm%ab == MASK_ABSORBING) call zvmask(gr, hm, st) 
 
+!HH                                                                                                     
+      ! in case use scdm localized states for exact exchange and request a new localization             
+      if(hm%EXX) scdm_is_local = .false.
+
       ! time iterate the system, one time step.
       select case(td%dynamics)
       case(EHRENFEST)
@@ -502,6 +506,8 @@ contains
       else
         call density_calc(st, gr, st%zrho%Re, st%zrho%Im)
       end if
+!HH                                                                                                     
+      if(hm%EXX.and..not.hm%theory_level == HARTREE_FOCK) hm%hf_st => st
 
       if(freeze_orbitals > 0) then
         ! In this case, we first freeze the orbitals, then calculate the Hxc potential.

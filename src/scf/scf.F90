@@ -595,6 +595,12 @@ contains
     itime = loct_clock()
     do iter = 1, scf%max_iter
       call profiling_in(prof, "SCF_CYCLE")
+! HH                                                                                                    
+! reset scdm flag                                                                                       
+       scdm_is_local = .false.
+! this is stupid should be done in init                                                                 
+       scdm_geo = geo
+       scdm%iter = iter
 
       ! this initialization seems redundant but avoids improper optimization at -O3 by PGI 7 on chum,
       ! which would cause a failure of testsuite/linear_response/04-vib_modes.03-vib_modes_fd.inp
