@@ -14,7 +14,7 @@
 integer :: nn(3)
     R_TYPE, allocatable :: KSt(:,:), KSt_original(:,:)
     R_TYPE, allocatable ::  SCDM_temp(:,:), Pcc(:,:)
-    FLOAT, allocatable :: rho(:), pot(:), rho2(:)
+    R_TYPE, allocatable :: rho(:), pot(:), rho2(:)
     FLOAT  :: exx
     R_TYPE, allocatable     :: state_global(:), temp_state(:,:)
     !
@@ -58,7 +58,8 @@ call cpu_time(t0)
           ! this call is necessary becasue we want to have only np not np_part
 ! this needs to be complex in td
            call states_get_state(st, mesh, i, st%d%nik, temp_state)
-           KSt(i,:) = temp_state(:,1)!st%dpsi(:,st%d%dim,i,st%d%nik)
+
+           KSt(i,:) = st%occ(i,1)*temp_state(:,1)!st%dpsi(:,st%d%dim,i,st%d%nik)
        enddo
        SAFE_DEALLOCATE_A(temp_state)
     endif
@@ -82,7 +83,7 @@ call cpu_time(t1)
        ! form SCDM Note: This could be done in one step together with the orhtogonalization
        !                 to save this allocation
        SAFE_ALLOCATE(SCDM_temp(mesh%np_global,nval))
-       SCDM_temp(:,:) = 0.
+       SCDM_temp(:,:) = M_ZERO
        do i=1,nval
           do v=1,nval
              SCDM_temp(:,i) = SCDM_temp(:,i) + KSt_original(v,:)*R_CONJ(KSt_original(v,JPVT(i)))
@@ -96,7 +97,7 @@ call cpu_time(t1)
        ! --- Orthogoalization ----
        ! form lower trinagle of Pcc
        SAFE_ALLOCATE(Pcc(nval,nval))
-       Pcc(:,:) = 0.
+       Pcc(:,:) = M_ZERO
        do i=1,nval
           do j=1,i
              do v=1,nval
@@ -143,12 +144,22 @@ call cpu_time(t1)
        print *, 'time: explicit matmul3',t1-t2
        ! normalise SCDM states
        do v=1,nval
-          scdm%st%X(psi)(:,1,v,1) = scdm%st%X(psi)(:,1,v,1)/ &
-               sqrt(dot_product(scdm%st%X(psi)(:,1,v,1),scdm%st%X(psi)(:,1,v,1))* mesh%volume_element)
+          scdm%st%X(psi)(:,1,v,1) = scdm%st%X(psi)(:,1,v,1)/X(mf_nrm2)(mesh,scdm%st%X(psi)(:,1,v,1))
        enddo
        call cpu_time(t2)
        print *, 'time: norms',t2-t1
        !
+! check orthonormality
+!print *, 'orthonrmality: ================'
+!do j=1,nval
+!   do i=1,nval
+!      print *, i,j, dot_product(scdm%st%X(psi)(1:mesh%np,1,i,1),scdm%st%X(psi)(1:mesh%np,1,j,1))*mesh%volume_element
+!      print *, i,j, dot_product(st%X(psi)(1:mesh%np,1,i,1),st%X(psi)(1:mesh%np,1,j,1))*mesh%volume_element
+!   enddo
+!enddo
+!print *, '=============================='
+
+
 ! write cube files
 !do v=1,10
 !  write(name,'(I10)') v
@@ -164,7 +175,7 @@ call cpu_time(t1)
           do i=1,3
 !             scdm%center(i,v) = sum(scdm%st%dpsi(:,st%d%dim,v,scdm%st%d%nik)**2*mesh%x(:,i))*mesh%volume_element
              scdm%center(i,v) = sum(scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik)*R_CONJ(scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik))* &
-                       mesh%idx%lxyz(:,i)*mesh%spacing(i))*mesh%volume_element
+                       mesh%idx%lxyz(1:mesh%np,i)*mesh%spacing(i))*mesh%volume_element
           enddo
           write(127,*) scdm%center(:,v)
        enddo
@@ -173,8 +184,9 @@ call cpu_time(t1)
     endif
     !
 !---! --------------------- SERIAL END ------------------------------------
+    !
     call MPI_Barrier(mesh%mpi_grp%comm, mpi_err)
-   !
+    !
     ! distribute the localized states
     count = 0
     SAFE_ALLOCATE(temp_state(1:mesh%np_global,1))
@@ -228,37 +240,99 @@ call cpu_time(t1)
           enddo
        enddo
        !
+       call MPI_Barrier(mesh%mpi_grp%comm, mpi_err)
 ! compue localization error
 print *, 'state, localization error', v, 1.-dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element
-! f localization eror set zero INside the box
-!do j=1,scdm%box_size*2+1
-!   do k=1,scdm%box_size*2+1
-!      do l=1,scdm%box_size*2+1
-!        ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-!        scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = M_ZERO
-!     enddo
-!  enddo
-!enddo
-!print *, 'state, localization error', v, real(dot_product(scdm%st%X(psi)(:,1,count,1),scdm%st%X(psi)(:,1,count,1))*mesh%volume_element)
 
-       call MPI_Barrier(mesh%mpi_grp%comm, mpi_err)
-       !
-! for testing zero outside the box
-scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik) = 0.
-do j=1,scdm%box_size*2+1
-   do k=1,scdm%box_size*2+1
-      do l=1,scdm%box_size*2+1
-         ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-        scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = scdm%X(psi)(ip,count)
-     enddo
-  enddo
-enddo
-
+! re-normalize inside box
+if(scdm%re_ortho_normalize) then
+   scdm%X(psi)(:,count) = scdm%X(psi)(:,count)/(dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element)
+   !
+   ! for testing zero outside the box
+   scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik) = 0.
+   do j=1,scdm%box_size*2+1
+      do k=1,scdm%box_size*2+1
+         do l=1,scdm%box_size*2+1
+            ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+            scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = scdm%X(psi)(ip,count)
+         enddo
+      enddo
+   enddo
+endif
        !
    enddo
    !
 call cpu_time(t2)
 print *, 'time: copy box',t2-t1
+!
+!
+if(scdm%re_ortho_normalize) then
+! check orthonormality
+print *, 'orthonrmality in boxes: ================'
+do j=1,nval
+   do i=1,nval
+      print *, i,j, dot_product(scdm%st%X(psi)(1:mesh%np,1,i,1),scdm%st%X(psi)(1:mesh%np,1,j,1))*mesh%volume_element
+   enddo
+enddo
+print *, '=============================='
+! and re-orthogonalize-----------------------------------------------------
+call X(states_orthogonalization_full)(scdm%st, mesh, 1)
+! and cut again
+count = 0
+   scdm%X(psi)(:,:) =  M_ZERO
+   do v=scdm%st_start,scdm%st_end
+      count = count +1
+       do i=1,3
+          icenter(i) = scdm%center(i,v)/mesh%spacing(i)
+       enddo
+       ind_center = mesh%idx%lxyz_inv(icenter(1),icenter(2),icenter(3))
+       scdm%box(:,:,:,count) =  mesh%idx%lxyz_inv(icenter(1)-scdm%box_size:icenter(1)+scdm%box_size, &
+                                              icenter(2)-scdm%box_size:icenter(2)+scdm%box_size, &
+                                              icenter(3)-scdm%box_size:icenter(3)+scdm%box_size)
+       do j=1,scdm%box_size*2+1
+          do k=1,scdm%box_size*2+1
+             do l=1,scdm%box_size*2+1
+                ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+                scdm%X(psi)(ip,count) = scdm%st%X(psi)(scdm%box(j,k,l,count),st%d%dim,count,scdm%st%d%nik)
+             enddo
+          enddo
+       enddo
+       ! and set to zero outside again
+       scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik) = 0.
+       do j=1,scdm%box_size*2+1
+          do k=1,scdm%box_size*2+1
+             do l=1,scdm%box_size*2+1
+                ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+                scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = scdm%X(psi)(ip,count)
+             enddo
+          enddo
+       enddo
+       !
+    enddo
+!--------------------------------------------------------------------------
+print *, 'orthonrmality in boxes after re-ortho: ================'
+do j=1,nval
+   do i=1,nval
+      print *, i,j, dot_product(scdm%st%X(psi)(1:mesh%np,1,i,1),scdm%st%X(psi)(1:mesh%np,1,j,1))*mesh%volume_element
+   enddo
+enddo
+print *, '======================================================'
+endif
+!
+
+! check span
+!SAFEx_ALLOCATE(state_global(1:mesh%np_global))
+!state_global(:) = M_ZERO
+!print *, 'quality of projector:'
+!do j=1,nval
+!   state_global(:) = M_ZERO
+!   do i=1,nval
+!      state_global(:) = state_global(:) + &
+!           dot_product(scdm%st%X(psi)(:,1,i,1),st%X(psi)(1:mesh%np,1,j,1))*scdm%st%X(psi)(:,1,i,1)*mesh%volume_element
+!   enddo
+!   print *, j, M_ONE - X(mf_nrm2)(mesh, state_global)
+!enddo
+
 
     ! set flag to do this only once
     scdm_is_local = .true.
@@ -284,13 +358,13 @@ return
     do i=1,nval
        do j=1,i
           temp(:) = (scdm%center(:,i)- scdm%center(:,j))/mesh%spacing(:)
-          if(sqrt(dot_product(temp,temp)).le.2.*scdm%rcut) then
+!          if(sqrt(dot_product(temp,temp)).le.2.*scdm%rcut) then
              !
              rho(:) = scdm%st%X(psi)(:,st%d%dim,i,scdm%st%d%nik)*scdm%st%X(psi)(:,st%d%dim,j,scdm%st%d%nik)
-!rho(:) = st%dpsi(:,st%d%dim,i,scdm%st%d%nik)*st%dpsi(:,st%d%dim,j,scdm%st%d%nik)
+!rho(:) = st%X(psi)(:,st%d%dim,i,scdm%st%d%nik)*st%X(psi)(:,st%d%dim,j,scdm%st%d%nik)
              rho2(:) = rho(:)
              pot(:) = 0.
-             call dpoisson_solve(psolver, pot, rho, all_nodes = .false.)
+             call X(poisson_solve)(psolver, pot, rho, all_nodes = .false.)
              !
              ! catch diagonals for double counting
              if(i.ne.j) then
@@ -298,12 +372,16 @@ return
              else
                 exx = exx - 0.25*dot_product(pot(:),rho2(:))*mesh%volume_element
              endif
-          endif
+!          endif
           !
        enddo
     enddo
     !
     print *, 'HH: exx[eV] = ', exx*27.211396132
+    SAFE_DEALLOCATE_A(rho)
+    SAFE_DEALLOCATE_A(rho2)
+    SAFE_DEALLOCATE_A(pot)
+!stop
     !
   end subroutine X(scdm_localize)
 
