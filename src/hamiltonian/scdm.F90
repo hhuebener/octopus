@@ -27,7 +27,7 @@ module scdm_m
   use io_function_m
   use kpoints_m
   use lalg_basic_m
-  use lasers_m
+!  use lasers_m
   use math_m
   use mesh_m
   use mesh_cube_map_m
@@ -49,6 +49,7 @@ module scdm_m
   use simul_box_m
   use smear_m
   use states_m
+  use states_calc_m
   use states_dim_m
   use types_m
   use unit_m
@@ -82,6 +83,8 @@ module scdm_m
      type(poisson_t)  :: poisson     ! solver used to compute exchange with localized scdm states
      type(poisson_fft_t) :: poisson_fft ! used for above poisson solver
      type(cmplxscl_t)    :: cmplxscl
+     !
+     logical            :: re_ortho_normalize=.false.
      !
      ! parallelization of scdm states
      logical          :: root        ! this is a redundat flag equal to mesh%vp%rank==0
@@ -135,6 +138,8 @@ module scdm_m
     scdm%st%d%nik = st%d%nik
     scdm%st%d     = st%d
     scdm%cmplxscl = st%cmplxscl
+    call parse_logical(datasets_check('SCDM_reorthonormalize'), .false., scdm%re_ortho_normalize)
+    if(scdm%re_ortho_normalize) scdm%st%d%orth_method = ORTH_CHOLESKY_SERIAL
     !
     !
     ! allocate centers
@@ -142,8 +147,8 @@ module scdm_m
     !
     ! make a cube around the center points
     ! with side length NOTE: this should be dynamic
-!    call parse_float(datasets_check('SCDMCutoffRadius'), 3., scdm%rcut, units_inp%length)
-    scdm%rcut = 3.
+    call parse_float(datasets_check('SCDMCutoffRadius'), 3._8, scdm%rcut, units_inp%length)
+print *, 'HH: SCDM cutoff', scdm%rcut
     ! box_size is half the size of the  box
     scdm%box_size = 0
     do i=1,3
@@ -172,20 +177,20 @@ module scdm_m
     ! root process holds all states NOTE: this is not great... clearly ... but will go away when SCDM procedure is parallel
     if(.not.states_are_real(st)) then
        if(scdm%root) then
-          SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_part_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
+          SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
        else
-          SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_part_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
-
+          SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
+scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
        ! localized SCDM states defined on box twice their size for coulomb truncation
        SAFE_ALLOCATE(scdm%zpsi(scdm%full_box,scdm%lnst))
     else ! real
        if(scdm%root) then
-          SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_part_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
+          SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
        else
-          SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_part_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
-
+          SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
+scdm%st%dpsi(:,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
        ! localized SCDM states defined on box twice their size for coulomb truncation
        SAFE_ALLOCATE(scdm%dpsi(scdm%full_box,scdm%lnst))
 

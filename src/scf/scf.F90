@@ -597,8 +597,9 @@ contains
     do iter = 1, scf%max_iter
       call profiling_in(prof, "SCF_CYCLE")
 ! HH                                                                                                    
-! reset scdm flag                                                                                       
-       scdm_is_local = .false.
+! reset scdm flag
+       if(iter.gt.1) scdm_is_local = .false.
+!if(iter.gt.2) stop
 ! this is stupid should be done in init                                                                 
        scdm_geo = geo
        scdm%iter = iter

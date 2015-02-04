@@ -176,6 +176,7 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
       !
       ASSERT(.not. batch_is_packed(hpsib))
       !
+!goto 321
       if(hm%EXX)  then
          !
          call scdm_init(hm%hf_st, der,scdm)
@@ -184,7 +185,7 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
          ! is EXX used with Hartree Fock?
          if(hm%theory_level == HARTREE_FOCK) then
             exx_coef = hm%exx_coef  !i.e. = 1.
-         else
+         else !i.e. PBE0, this should be more general
             exx_coef = 0.25
          endif
          ! to apply the scdm exact exchange we need the state on the global mesh
@@ -196,8 +197,6 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
 !do idim=1,der%mesh%np
 !   write(123,*) real(epsib%states(ii)%X(psi)(idim,1))
 !enddo
-
-
             psi_global(:,:) = M_ZERO
             call X(vec_gather)(der%mesh%vp, 0, psi_global(1:der%mesh%np_global,1),epsib%states(ii)%X(psi)(:,1) )
             call MPI_Bcast(psi_global(1,1),der%mesh%np_global , R_MPITYPE, 0, der%mesh%mpi_grp%comm, mpi_err)
@@ -207,8 +206,8 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
             call X(vec_gather)(der%mesh%vp, 0, hpsi_global(1:der%mesh%np_global,1),hpsib%states(ii)%X(psi)(:,1) )
             !
             ! call with global hpsi
-!           call X(scdm_exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef)
- call X(exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef) 
+           call X(scdm_exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef)
+! call X(exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef) 
             ! this is how the call shoudl look like
 !            call X(scdm_exchange_operator)(hm, der,  psi_global, hpsib%states(ii)%X(psi), psib%states(ii)%ist, ik, exx_coef)
             !
@@ -222,6 +221,8 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
          enddo
          !
       else
+!321 call scdm_init(hm%hf_st, der,scdm)
+!call X(scdm_localize)(hm%hf_st, der%mesh,scdm)
 ! HH end
          ! original call
          do ii = 1,psib%nst
@@ -440,6 +441,9 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
   integer :: jst, ip, idim, ik2
   FLOAT                              :: ff
   R_TYPE, allocatable :: rho(:), pot(:), psi2(:, :)
+!debug
+!R_TYPE, allocatable :: temp(:,:)
+
   PUSH_SUB(X(exchange_operator))
 
   if(der%mesh%sb%kpoints%full%npoints > 1) call messages_not_implemented("exchange operator with k-points")
@@ -448,7 +452,9 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
   SAFE_ALLOCATE(rho(1:der%mesh%np))
   SAFE_ALLOCATE(pot(1:der%mesh%np))
   SAFE_ALLOCATE(psi2(1:der%mesh%np, 1:hm%d%dim))
-
+!debug!!!!!
+!SAFEx_ALLOCATE(temp(1:der%mesh%np,1:hm%d%dim))
+!temp(:,:) = Mx_ZERO
   do ik2 = 1, hm%d%nik
     if(states_dim_get_spin_index(hm%d, ik2) /= states_dim_get_spin_index(hm%d, ik)) cycle
 
@@ -463,7 +469,7 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
 
       call states_get_state(hm%hf_st, der%mesh, jst, ik2, psi2)
 ! full scdm state
-! psi2(1:der%mesh%np,1) = scdm%st%X(psi)(1:der%mesh%np,1,jst,1)
+!psi2(1:der%mesh%np,1) = scdm%st%X(psi)(1:der%mesh%np,1,jst,1)
 
       if(hm%cmplxscl%space) psi2 = R_CONJ(psi2)
 
@@ -481,12 +487,24 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
       do idim = 1, hm%hf_st%d%dim
          forall(ip = 1:der%mesh%np)
             hpsi(ip, idim) = hpsi(ip, idim) - exx_coef*ff*psi2(ip, idim)*pot(ip)
+!            temp(ip, idim) = temp(ip, idim) - exx_coef*ff*psi2(ip, idim)*pot(ip)
          end forall
       end do
 
    end do
   end do
 
+!debug
+!  open(unit=123,form="formatted")
+!  do idim = 1, hm%hf_st%d%dim
+!     do ip = 1,der%mesh%np
+!        write(123,*) temp(ip, idim) 
+!     enddo
+!  enddo
+!  close(123)
+!  !stop
+!SAFEx_DEALLOCATE_A(temp)
+     
   SAFE_DEALLOCATE_A(rho)
   SAFE_DEALLOCATE_A(pot)
   SAFE_DEALLOCATE_A(psi2)
