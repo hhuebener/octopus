@@ -144,7 +144,8 @@ call cpu_time(t1)
        print *, 'time: explicit matmul3',t1-t2
        ! normalise SCDM states
        do v=1,nval
-          scdm%st%X(psi)(:,1,v,1) = scdm%st%X(psi)(:,1,v,1)/X(mf_nrm2)(mesh,scdm%st%X(psi)(:,1,v,1))
+          scdm%st%X(psi)(:,1,v,1) = scdm%st%X(psi)(:,1,v,1)/&
+               (sqrt(dot_product(scdm%st%X(psi)(:,1,v,1),scdm%st%X(psi)(:,1,v,1))*mesh%volume_element))!X(mf_nrm2)(mesh,scdm%st%X(psi)(:,1,v,1))
        enddo
        call cpu_time(t2)
        print *, 'time: norms',t2-t1
@@ -175,7 +176,7 @@ call cpu_time(t1)
           do i=1,3
 !             scdm%center(i,v) = sum(scdm%st%dpsi(:,st%d%dim,v,scdm%st%d%nik)**2*mesh%x(:,i))*mesh%volume_element
              scdm%center(i,v) = sum(scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik)*R_CONJ(scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik))* &
-                       mesh%idx%lxyz(1:mesh%np,i)*mesh%spacing(i))*mesh%volume_element
+                       mesh%idx%lxyz(1:mesh%np_global,i)*mesh%spacing(i))*mesh%volume_element
           enddo
           write(127,*) scdm%center(:,v)
        enddo
@@ -190,11 +191,11 @@ call cpu_time(t1)
     ! distribute the localized states
     count = 0
     SAFE_ALLOCATE(temp_state(1:mesh%np_global,1))
-    temp_state(:,:) = M_ZERO
     do i=1,nval
        ! send state to all processes as temp
+       temp_state(:,:) = M_ZERO
        ! this is only non-zero on root
-       temp_state(:,1) =  scdm%st%X(psi)(1:mesh%np_global,st%d%dim,i,scdm%st%d%nik)
+       if(scdm%root) temp_state(:,1) =  scdm%st%X(psi)(1:mesh%np_global,st%d%dim,i,scdm%st%d%nik)
        call MPI_Bcast(temp_state(1,1),mesh%np_global , R_MPITYPE, 0, mesh%mpi_grp%comm, mpi_err)
        !
        ! only keep the state if it falls into index range on process

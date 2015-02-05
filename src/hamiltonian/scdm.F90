@@ -178,22 +178,21 @@ print *, 'HH: SCDM cutoff', scdm%rcut
     if(.not.states_are_real(st)) then
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
+          scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
-scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
        ! localized SCDM states defined on box twice their size for coulomb truncation
        SAFE_ALLOCATE(scdm%zpsi(scdm%full_box,scdm%lnst))
     else ! real
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
+          scdm%st%dpsi(:,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
-scdm%st%dpsi(:,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
        ! localized SCDM states defined on box twice their size for coulomb truncation
        SAFE_ALLOCATE(scdm%dpsi(scdm%full_box,scdm%lnst))
-
     endif
     !
     ! create a mesh object for the small box (for now each scdm state is in the same box, should be dynamic)
