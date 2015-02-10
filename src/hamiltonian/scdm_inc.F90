@@ -15,7 +15,7 @@ integer :: nn(3)
     R_TYPE, allocatable :: KSt(:,:), KSt_original(:,:)
     R_TYPE, allocatable ::  SCDM_temp(:,:), Pcc(:,:)
     R_TYPE, allocatable :: rho(:), pot(:), rho2(:)
-    FLOAT  :: exx
+    FLOAT  :: exx, error, error_tmp
     R_TYPE, allocatable     :: state_global(:), temp_state(:,:)
     !
 !debug
@@ -76,7 +76,7 @@ call cpu_time(t1)
        !
        call X(RRQR)(nval,mesh%np_global,KSt,JPVT)
        call cpu_time(t2)
-       print *, 'time: RRQR:', t2-t1
+!       print *, 'time: RRQR:', t2-t1
        !
        SAFE_DEALLOCATE_A(KSt)
        !
@@ -92,7 +92,7 @@ call cpu_time(t1)
        enddo
        !
        call cpu_time(t1)
-       print *, 'time: explicit matmul1:',t1-t2
+!       print *, 'time: explicit matmul1:',t1-t2
        !
        ! --- Orthogoalization ----
        ! form lower trinagle of Pcc
@@ -108,7 +108,7 @@ call cpu_time(t1)
        enddo
        !
        call cpu_time(t2)
-       print *, 'time: explicit matmul2:',t2-t1
+!       print *, 'time: explicit matmul2:',t2-t1
        ! Cholesky fact.
        call X(POTRF)("L", nval, Pcc, nval, INFO )
        if(INFO.ne.0) then
@@ -121,14 +121,14 @@ call cpu_time(t1)
        endif
        !
        call cpu_time(t1)
-       print *, 'time: cholesky:',t1-t2
+!       print *, 'time: cholesky:',t1-t2
        ! transpose
        Pcc(:,:) = transpose(R_CONJ(Pcc(:,:)))
        ! invert
        call X(invert)(nval,Pcc)
        !
        call cpu_time(t2)
-       print *, 'time: transpose invert:',t2-t1
+!       print *, 'time: transpose invert:',t2-t1
        ! form ortho SCDM
        scdm%st%X(psi)(:,:,:,:) = M_ZERO
        do i=1,mesh%np_global
@@ -141,14 +141,14 @@ call cpu_time(t1)
        !
        SAFE_DEALLOCATE_A(SCDM_temp)
        call cpu_time(t1)
-       print *, 'time: explicit matmul3',t1-t2
+!       print *, 'time: explicit matmul3',t1-t2
        ! normalise SCDM states
        do v=1,nval
           scdm%st%X(psi)(:,1,v,1) = scdm%st%X(psi)(:,1,v,1)/&
                (sqrt(dot_product(scdm%st%X(psi)(:,1,v,1),scdm%st%X(psi)(:,1,v,1))*mesh%volume_element))!X(mf_nrm2)(mesh,scdm%st%X(psi)(:,1,v,1))
        enddo
        call cpu_time(t2)
-       print *, 'time: norms',t2-t1
+!       print *, 'time: norms',t2-t1
        !
 ! check orthonormality
 !print *, 'orthonrmality: ================'
@@ -168,7 +168,7 @@ call cpu_time(t1)
 !  !enddo
 !call dio_function_output (io_function_fill_how('Cube'), ".", "HF_1", mesh, st%dpsi(:,1,1,1), unit_one, info,geo=scdm_geo)
        call cpu_time(t1)
-       print *, 'time: output',t1-t2
+!       print *, 'time: output',t1-t2
        !
        ! find centers, by computing center of mass of |psi|^2
        scdm%center(:,:) = 0
@@ -181,7 +181,7 @@ call cpu_time(t1)
           write(127,*) scdm%center(:,v)
        enddo
        call cpu_time(t2)
-       print *, 'time: find centers',t2-t1
+!       print *, 'time: find centers',t2-t1
     endif
     !
 !---! --------------------- SERIAL END ------------------------------------
@@ -213,6 +213,7 @@ call cpu_time(t1)
     ! copy local box of state
 call cpu_time(t1)
    count = 0
+   error_tmp = M_ZERO
    scdm%X(psi)(:,:) =  M_ZERO
    do v=scdm%st_start,scdm%st_end
       count = count +1
@@ -241,30 +242,35 @@ call cpu_time(t1)
           enddo
        enddo
        !
-       call MPI_Barrier(mesh%mpi_grp%comm, mpi_err)
-! compue localization error
-print *, 'state, localization error', v, 1.-dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element
-
-! re-normalize inside box
-if(scdm%re_ortho_normalize) then
-   scdm%X(psi)(:,count) = scdm%X(psi)(:,count)/(dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element)
-   !
-   ! for testing zero outside the box
-   scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik) = 0.
-   do j=1,scdm%box_size*2+1
-      do k=1,scdm%box_size*2+1
-         do l=1,scdm%box_size*2+1
-            ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-            scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = scdm%X(psi)(ip,count)
-         enddo
-      enddo
-   enddo
-endif
+       !
+       ! compue localization error
+       error_tmp = error_tmp + M_ONE - dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element
+       !
+       ! re-normalize inside box
+       if(scdm%re_ortho_normalize) then
+          scdm%X(psi)(:,count) = scdm%X(psi)(:,count)/(dot_product(scdm%X(psi)(:,count),scdm%X(psi)(:,count))*mesh%volume_element)
+          !
+          ! for testing zero outside the box
+          scdm%st%X(psi)(:,st%d%dim,v,scdm%st%d%nik) = 0.
+          do j=1,scdm%box_size*2+1
+             do k=1,scdm%box_size*2+1
+                do l=1,scdm%box_size*2+1
+                   ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+                   scdm%st%X(psi)(scdm%box(j,k,l,v),st%d%dim,v,scdm%st%d%nik) = scdm%X(psi)(ip,count)
+                enddo
+             enddo
+          enddo
+       endif
        !
    enddo
    !
+   error = M_ZERO
+   call MPI_Allreduce(error_tmp, error, 1, MPI_FLOAT, MPI_SUM, st%mpi_grp%comm, mpi_err)
+   if(scdm%root) print *, 'SCDM localization error:', error/st%nst
+   !
+   call MPI_Barrier(mesh%mpi_grp%comm, mpi_err)
 call cpu_time(t2)
-print *, 'time: copy box',t2-t1
+!print *, 'time: copy box',t2-t1
 !
 !
 if(scdm%re_ortho_normalize) then
@@ -343,10 +349,10 @@ endif
     SAFE_DEALLOCATE_A(KSt)
     SAFE_DEALLOCATE_A(scdm_temp)
     !
-    print *, 'HH: done SCDM localize'
+!    print *, 'HH: done SCDM localize'
     !
 call cpu_time(t1)
-print *, 'time: all SCDM',t1-t0
+    if(scdm%root) print *, 'time: all SCDM',t1-t0
     !
 return
 !if(scdm%iter.le.20) return

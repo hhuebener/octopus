@@ -178,7 +178,7 @@ print *, 'HH: SCDM cutoff', scdm%rcut
     if(.not.states_are_real(st)) then
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
-          scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
+!          scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
@@ -187,7 +187,7 @@ print *, 'HH: SCDM cutoff', scdm%rcut
     else ! real
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
-          scdm%st%dpsi(:,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
+!          scdm%st%dpsi(1:der%mesh%np_global,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
