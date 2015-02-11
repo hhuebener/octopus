@@ -165,8 +165,10 @@ call cpu_time(t1)
 !do v=1,10
 !  write(name,'(I10)') v
 !  name = 'scdm_'//trim(adjustl(name))
-!  !enddo
-!call dio_function_output (io_function_fill_how('Cube'), ".", "HF_1", mesh, st%dpsi(:,1,1,1), unit_one, info,geo=scdm_geo)
+  !enddo
+
+!call X(io_function_output)(io_function_fill_how('Cube'), ".", "SCDM_1", mesh, scdm%st%X(psi)(:,1,1,1), &
+!                            unit_one, info,geo=scdm_geo)
        call cpu_time(t1)
 !       print *, 'time: output',t1-t2
        !

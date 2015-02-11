@@ -116,7 +116,7 @@ module scdm_m
     type(scdm_t) :: scdm
     type(cmplxscl_t) :: cmplxscl
     !
-    integer :: i,j,k, ip
+    integer :: i,j,k, ip, rank
     !debug
     integer :: temp(3)
     !
@@ -129,7 +129,9 @@ module scdm_m
     !
     if(st%lnst.ne.st%nst) call messages_not_implemented("SCDM with state parallelization")
     !
-    scdm%root = (der%mesh%vp%rank == 0)
+!    scdm%root = (der%mesh%vp%rank == 0)
+    call MPI_Comm_Rank( der%mesh%mpi_grp%comm, rank, mpi_err)
+    scdm%root = (rank ==0)
     !
     ! inherit some indices from st
     !scdm%st%d%dim = st%d%dim
@@ -148,7 +150,7 @@ module scdm_m
     ! make a cube around the center points
     ! with side length NOTE: this should be dynamic
     call parse_float(datasets_check('SCDMCutoffRadius'), 3._8, scdm%rcut, units_inp%length)
-print *, 'HH: SCDM cutoff', scdm%rcut
+    if(scdm%root) print *, 'HH: SCDM cutoff', scdm%rcut
     ! box_size is half the size of the  box
     scdm%box_size = 0
     do i=1,3
@@ -269,7 +271,7 @@ print *, 'HH: SCDM cutoff', scdm%rcut
     ! set flag to do this only once
     scdm_is_init = .true.
     !
-    print *, 'HH:  done SCDM init'
+    if(scdm%root) print *, 'HH:  done SCDM init'
     !
   end subroutine scdm_init
 
