@@ -23,6 +23,7 @@ module scdm_m
   use global_m
   use grid_m
   use hardware_m
+  use index_m
   use io_m
   use io_function_m
   use kpoints_m
@@ -66,25 +67,27 @@ module scdm_m
        scdm_init,         &
        dscdm_localize,    &
        zscdm_localize
-  
+
   type scdm_t
      type(states_t)   :: st          ! localized orthogonal states
-     type(poisson_t)  :: poisson1     ! solver
+     type(poisson_t)  :: poisson1    ! solver (not used, only for testing)
      type(cube_t)     :: cube        ! mesh cube for fft
      FLOAT, pointer   :: center(:,:) ! coordinates of centers of states (in same units as mesh%x)
-     FLOAT            :: rcut        ! orbital cutoff radius (box size)                                       NOTE: this could be dynamic and state dependent
+     FLOAT            :: rcut        ! orbital cutoff radius (box size) NOTE: this could be dynamic and state dependent
      integer          :: box_size    ! number of mesh points in the dimension of local box around scdm states NOTE: this could be dynamic and state dependent
-     integer          :: full_box    ! = (2*(2*box_size+1))**3
+     integer          :: full_box    ! = (2*(2*box_size+1))**3, i.e. number of points in box
      type(mesh_t)     :: boxmesh     ! mesh describing the small box
      type(cube_t)     :: boxcube     ! cube of the small box (used for fft in poisson solver, has doubled size for truncation)
-     integer, pointer :: box(:,:,:,:)  ! indices of global points that are contained in the local box for each state NOTE: this should be done smarter
+     integer, pointer :: box(:,:,:,:)  ! indices of global points that are contained in the local box for each state
      FLOAT, pointer   :: dpsi(:,:)   ! scdm states in their local box
-     CMPLX, pointer   :: zpsi(:,:)   ! .
+     CMPLX, pointer   :: zpsi(:,:)   ! ^
      type(poisson_t)  :: poisson     ! solver used to compute exchange with localized scdm states
      type(poisson_fft_t) :: poisson_fft ! used for above poisson solver
      type(cmplxscl_t)    :: cmplxscl
+     logical, pointer :: periodic(:) ! tracks whcih scdm states are split by the periodic boundary conditions
      !
-     logical            :: re_ortho_normalize=.false.
+     logical          :: re_ortho_normalize=.false. ! orthonormalize the scdm states
+     logical          :: verbose     ! write infor about SCDM procedure
      !
      ! parallelization of scdm states
      logical          :: root        ! this is a redundat flag equal to mesh%vp%rank==0
@@ -93,11 +96,6 @@ module scdm_m
      integer          :: st_end      ! .
      integer          :: lnst        ! .
      !
-! debug stuff
-     FLOAT, pointer  :: rho(:)   ! density built from SCDM
-     FLOAT, pointer  :: pot(:)
-     logical         :: has_hartree
-     integer         :: iter
   end type scdm_t
   !
   logical,public    :: scdm_is_init=.false.  ! is initialized
@@ -123,11 +121,13 @@ module scdm_m
     integer,  allocatable:: istart(:)
     integer,  allocatable:: iend(:)
     integer,  allocatable:: ilsize(:)
+    FLOAT :: dummy
     !
     ! check if already initialized
     if(scdm_is_init) return
     !
     if(st%lnst.ne.st%nst) call messages_not_implemented("SCDM with state parallelization")
+    if(st%d%nik.gt.1) call messages_not_implemented("SCDM with k-point sampling")
     !
 !    scdm%root = (der%mesh%vp%rank == 0)
     call MPI_Comm_Rank( der%mesh%mpi_grp%comm, rank, mpi_err)
@@ -143,6 +143,7 @@ module scdm_m
     call parse_logical(datasets_check('SCDM_reorthonormalize'), .false., scdm%re_ortho_normalize)
     if(scdm%re_ortho_normalize) scdm%st%d%orth_method = ORTH_CHOLESKY_SERIAL
     !
+    call parse_logical(datasets_check('SCDM_verbose'), .false., scdm%verbose)
     !
     ! allocate centers
     SAFE_ALLOCATE(scdm%center(3,scdm%st%nst))
@@ -150,18 +151,19 @@ module scdm_m
     ! make a cube around the center points
     ! with side length NOTE: this should be dynamic
     call parse_float(datasets_check('SCDMCutoffRadius'), 3._8, scdm%rcut, units_inp%length)
-    if(scdm%root) print *, 'HH: SCDM cutoff', scdm%rcut
+    if(scdm%root.and.scdm%verbose) call messages_print_var_value(stdout, 'SCDM cutoff', scdm%rcut)
     ! box_size is half the size of the  box
     scdm%box_size = 0
     do i=1,3
        scdm%box_size = max(scdm%box_size,ceiling(scdm%rcut/der%mesh%spacing(i)))
     enddo
-    if(scdm%root) then
-       print *, 'HH: SCDM box_size', scdm%box_size
-       print *, 'HH: SCDM box_size[Ang]', scdm%box_size*der%mesh%spacing(1)*0.529177249
+    if(scdm%root.and.scdm%verbose) then
+       call messages_print_var_value(stdout,'SCDM box_size', scdm%box_size)
+       call messages_print_var_value(stdout,'SCDM box_size[Ang]', scdm%box_size*der%mesh%spacing(1)*0.529177249)
     endif
     scdm%full_box = (2*(2*scdm%box_size+1))**3
-    if(scdm%root) print *, 'HH: SCDM fullbox[Ang]', 2*(2*scdm%box_size+1)*der%mesh%spacing(1)*0.529177249
+    dummy = 2*(2*scdm%box_size+1)*der%mesh%spacing(1)*0.529177249
+    if(scdm%root.and.scdm%verbose) call messages_print_var_value(stdout, 'SCDM fullbox[Ang]', dummy)
     SAFE_ALLOCATE(scdm%box(scdm%box_size*2+1,scdm%box_size*2+1,scdm%box_size*2+1,scdm%st%nst))
     !
     ! the localzied states defined in the box are distributed over state index
@@ -180,7 +182,6 @@ module scdm_m
     if(.not.states_are_real(st)) then
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
-!          scdm%st%zpsi(1:der%mesh%np_global,:,:,:) = st%zpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
@@ -189,13 +190,14 @@ module scdm_m
     else ! real
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
-!          scdm%st%dpsi(1:der%mesh%np_global,:,:,:) =st%dpsi(1:der%mesh%np_global,:,:,:)
        else
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
        ! localized SCDM states defined on box twice their size for coulomb truncation
        SAFE_ALLOCATE(scdm%dpsi(scdm%full_box,scdm%lnst))
     endif
+    !
+    SAFE_ALLOCATE(scdm%periodic(scdm%lnst))
     !
     ! create a mesh object for the small box (for now each scdm state is in the same box, should be dynamic)
     ! only initialize values needed in the following (e.g. by poisson_fft_init)
@@ -205,7 +207,7 @@ module scdm_m
     scdm%boxmesh%sb%dim = 3
     scdm%boxmesh%sb%klattice_primitive(:,:) = reshape((/1.,0.,0.,0.,1.,0.,0.,0.,1./),(/3,3/))
     scdm%boxmesh%sb%rlattice_primitive(:,:) = reshape((/1.,0.,0.,0.,1.,0.,0.,0.,1./),(/3,3/))
-!
+    !
     !set mesh points with double size for coulomb truncation
     scdm%boxmesh%np = scdm%full_box
     scdm%boxmesh%np_global = scdm%boxmesh%np
@@ -221,11 +223,10 @@ module scdm_m
     scdm%boxmesh%idx%ll(:) = scdm%boxmesh%idx%nr(2,:) - scdm%boxmesh%idx%nr(1,:) + 1
     scdm%boxmesh%idx%enlarge(:) = 0
     SAFE_ALLOCATE(scdm%boxmesh%idx%lxyz(scdm%boxmesh%np,scdm%boxmesh%idx%dim))
-    ! need to copy indices because otherwise line gets too long (???)
+    ! need to copy indices because otherwise line gets too long (precompiler???)
     i=-(scdm%box_size*2+1)
     j=(scdm%box_size*2+1)-1
     SAFE_ALLOCATE(scdm%boxmesh%idx%lxyz_inv(i:j,i:j,i:j))
-
     !
     ip = 0
     do i=scdm%boxmesh%idx%nr(1,1),scdm%boxmesh%idx%nr(2,1)
@@ -247,12 +248,11 @@ module scdm_m
     !
     call cube_init(scdm%boxcube, scdm%boxmesh%idx%ll, scdm%boxmesh%sb, &
                fft_type=FFT_REAL, fft_library=FFTLIB_FFTW, dont_optimize = .true.)
-
+    !
     ! Joseba recommends including this
     !if (der%mesh%parallel_in_domains .and. this%cube%parallel_in_domains) then
     !    call mesh_cube_parallel_map_init(this%mesh_cube_map, der%mesh, this%cube)
     !end if
-
     !
     ! set up poisson solver used for the exchange operator with scdm states
     ! this replictaes poisson_kernel_init()
@@ -271,7 +271,7 @@ module scdm_m
     ! set flag to do this only once
     scdm_is_init = .true.
     !
-    if(scdm%root) print *, 'HH:  done SCDM init'
+    call messages_write('done SCDM init')
     !
   end subroutine scdm_init
 
@@ -347,6 +347,47 @@ module scdm_m
     endif
     !
   end subroutine zRRQR
+
+  subroutine check_periodic_box(idx,center,size,periodic)
+    ! check if there are points outside simulation cell (index range of idx) by
+    ! checking the corners only. This is inteded for rectangular cells
+    ! should be generalized to arbitrary shapes (but then need to check the faces)
+    !
+    type(index_t),    intent(in)  :: idx
+    integer, intent(in)  :: center(:)
+    integer, intent(in)  :: size
+    logical, intent(out) :: periodic
+    !
+    ! internal
+    integer :: ix(3), corner(3,8), i1, idim
+    !
+    periodic = .false.
+    !
+    ! make the sign pattern for corners
+    corner(:,1) = (/1,1,1/)
+    corner(:,2) = (/1,1,-1/)
+    corner(:,3) = (/1,-1,1/)
+    corner(:,4) = (/-1,1,1/)
+    corner(:,5) = (/1,-1,-1/)
+    corner(:,6) = (/-1,1,-1/)
+    corner(:,7) = (/-1,-1,1/)
+    corner(:,8) = (/-1,-1,-1/)
+    !
+    do i1=1,8
+       !
+       ix(:)=center(:) + size*corner(:,i1)
+       !
+       do idim=1,3
+          if(ix(idim).lt.idx%nr(1,idim).or.ix(idim).gt.idx%nr(2,idim)) then
+             periodic = .true. 
+             return
+          endif
+       enddo
+       !
+    enddo
+    !
+  end subroutine check_periodic_box
+
 
 
 #include "undef.F90"

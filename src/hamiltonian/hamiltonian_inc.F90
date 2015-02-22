@@ -172,11 +172,9 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
 
 !HH
    if(hm%theory_level == HARTREE .or. hm%theory_level == HARTREE_FOCK.or.hm%EXX) then
-!      if(hm%theory_level == HARTREE .or. hm%theory_level == HARTREE_FOCK) then
       !
       ASSERT(.not. batch_is_packed(hpsib))
       !
-!goto 321
       if(hm%EXX)  then
          !
          call scdm_init(hm%hf_st, der,scdm)
@@ -194,9 +192,6 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
          SAFE_ALLOCATE(hpsi_global(der%mesh%np_global,hm%hf_st%d%dim))
          !
          do ii = 1,psib%nst
-!do idim=1,der%mesh%np
-!   write(123,*) real(epsib%states(ii)%X(psi)(idim,1))
-!enddo
             psi_global(:,:) = M_ZERO
             call X(vec_gather)(der%mesh%vp, 0, psi_global(1:der%mesh%np_global,1),epsib%states(ii)%X(psi)(:,1) )
             call MPI_Bcast(psi_global(1,1),der%mesh%np_global , R_MPITYPE, 0, der%mesh%mpi_grp%comm, mpi_err)
@@ -209,22 +204,14 @@ R_TYPE, allocatable :: psi_global(:,:), hpsi_global(:,:)
            call X(scdm_exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef)
 ! call X(exchange_operator)(hm, der,  psi_global, hpsi_global, psib%states(ii)%ist, ik, exx_coef) 
             ! this is how the call shoudl look like
-!            call X(scdm_exchange_operator)(hm, der,  psi_global, hpsib%states(ii)%X(psi), psib%states(ii)%ist, ik, exx_coef)
+            ! call X(scdm_exchange_operator)(hm, der,  psi_global, hpsib%states(ii)%X(psi), psib%states(ii)%ist, ik, exx_coef)
             !
             call X(vec_scatter)(der%mesh%vp,0, hpsi_global(1:der%mesh%np_global,1), hpsib%states(ii)%X(psi)(:,1))
-!do idim=1,der%mesh%np
-!   write(124,*) real(hpsib%states(ii)%X(psi)(idim,1)), R_AIMAG(hpsib%states(ii)%X(psi)(idim,1))
-!enddo
-!stop
-
             !
          enddo
          !
       else
-!321 call scdm_init(hm%hf_st, der,scdm)
-!call X(scdm_localize)(hm%hf_st, der%mesh,scdm)
-! HH end
-         ! original call
+         ! standard HF 
          do ii = 1,psib%nst
             call X(exchange_operator)(hm, der, epsib%states(ii)%X(psi), hpsib%states(ii)%X(psi), psib%states(ii)%ist, ik,hm%exx_coef)
          end do
@@ -441,8 +428,6 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
   integer :: jst, ip, idim, ik2
   FLOAT                              :: ff
   R_TYPE, allocatable :: rho(:), pot(:), psi2(:, :)
-!debug
-!R_TYPE, allocatable :: temp(:,:)
 
   PUSH_SUB(X(exchange_operator))
 
@@ -452,9 +437,7 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
   SAFE_ALLOCATE(rho(1:der%mesh%np))
   SAFE_ALLOCATE(pot(1:der%mesh%np))
   SAFE_ALLOCATE(psi2(1:der%mesh%np, 1:hm%d%dim))
-!debug!!!!!
-!SAFEx_ALLOCATE(temp(1:der%mesh%np,1:hm%d%dim))
-!temp(:,:) = Mx_ZERO
+
   do ik2 = 1, hm%d%nik
     if(states_dim_get_spin_index(hm%d, ik2) /= states_dim_get_spin_index(hm%d, ik)) cycle
 
@@ -468,7 +451,7 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
       rho = R_TOTYPE(M_ZERO)
 
       call states_get_state(hm%hf_st, der%mesh, jst, ik2, psi2)
-! full scdm state
+! for testting: full scdm state
 !psi2(1:der%mesh%np,1) = scdm%st%X(psi)(1:der%mesh%np,1,jst,1)
 
       if(hm%cmplxscl%space) psi2 = R_CONJ(psi2)
@@ -487,24 +470,12 @@ subroutine X(exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
       do idim = 1, hm%hf_st%d%dim
          forall(ip = 1:der%mesh%np)
             hpsi(ip, idim) = hpsi(ip, idim) - exx_coef*ff*psi2(ip, idim)*pot(ip)
-!            temp(ip, idim) = temp(ip, idim) - exx_coef*ff*psi2(ip, idim)*pot(ip)
          end forall
       end do
 
    end do
   end do
 
-!debug
-!  open(unit=123,form="formatted")
-!  do idim = 1, hm%hf_st%d%dim
-!     do ip = 1,der%mesh%np
-!        write(123,*) temp(ip, idim) 
-!     enddo
-!  enddo
-!  close(123)
-!  !stop
-!SAFEx_DEALLOCATE_A(temp)
-     
   SAFE_DEALLOCATE_A(rho)
   SAFE_DEALLOCATE_A(pot)
   SAFE_DEALLOCATE_A(psi2)
@@ -525,10 +496,10 @@ subroutine X(scdm_exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
 
   integer :: jst, ip, idim, ik2
   FLOAT :: ff
-
-  ! HH
+  ! 
   R_TYPE, allocatable :: rho_l(:), pot_l(:)
   integer :: j,k,l, count
+  R_TYPE  :: temp_state_global(der%mesh%np_global,hm%hf_st%d%dim)
 
   PUSH_SUB(X(scdm_exchange_operator))
 
@@ -538,85 +509,56 @@ subroutine X(scdm_exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
   SAFE_ALLOCATE(rho_l(1:scdm%full_box))
   SAFE_ALLOCATE(pot_l(1:scdm%full_box))
 
-!do ip=1,der%mesh%np
-!   write(123,*) real(hpsi(ip,1)), R_AIMAG(hpsi(ip,1))
-!enddo
-!stop
-
-
   do ik2 = 1, hm%d%nik
-    if(states_dim_get_spin_index(hm%d, ik2) /= states_dim_get_spin_index(hm%d, ik)) cycle
-    count = 0
-    do jst = scdm%st_start, scdm%st_end
-       count = count +1
-      if(hm%hf_st%occ(jst, ik2) < M_EPSILON) cycle
-
-      ! in Hartree we just remove the self-interaction
-      if(hm%theory_level == HARTREE .and. jst /= ist) cycle
-
-!      if(hm%cmplxscl%space) psi2 = R_CONJ(psi2)
-      !
-      ! for scdm do product only in the local box
-      rho_l(:) = 0.
-      ! the cube of rho is larger because of coulomb truncation, but here we only copy non-zero elements
-      do j=1,scdm%box_size*2+1
-         do k=1,scdm%box_size*2+1
-            do l=1,scdm%box_size*2+1
-               ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-               rho_l(ip) = R_CONJ(scdm%X(psi)(ip,count))*psi(scdm%box(j,k,l,count), 1)
-               !                rho_l(ip) = psi2(scdm%box(j,k,l,jst),1)*psi(scdm%box(j,k,l,jst), 1)
-            enddo
-         enddo
-      enddo
-      !
-!do ip=1,scdm%full_box
-!   write(2000+jst,*) real(rho_l(ip)), R_AIMAG(rho_l(ip))
-!enddo
-      call X(poisson_solve)(scdm%poisson, pot_l, rho_l, all_nodes=.false.)
-!do ip=1,scdm%full_box
-!   write(2000+jst,*) real(pot_l(ip)), R_AIMAG(pot_l(ip))
-!enddo
-
-      !
-!do j=1,scdm%box_size*2+1
-!   do k=1,scdm%box_size*2+1
-!      do l=1,scdm%box_size*2+1
-!         ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-!         write(1231,*) pot_l(ip)
-!         write(1241,*) pot(scdm%box(j,k,l,jst))
-!      enddo
-!   enddo
-!enddo
-!stop
-      !
-      ff = hm%hf_st%occ(jst, ik2)
-      if(hm%d%ispin == UNPOLARIZED) ff = M_HALF*ff
-
-      do idim = 1, hm%hf_st%d%dim
-         !
-         do j=1,scdm%box_size*2+1
-            do k=1,scdm%box_size*2+1
-               do l=1,scdm%box_size*2+1
-                  ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
-                  hpsi(scdm%box(j,k,l,count),idim) = hpsi(scdm%box(j,k,l,count),idim) - exx_coef*ff*scdm%X(psi)(ip,count)*pot_l(ip)
-               enddo
-            enddo
-         enddo
-      end do
-      !
-   end do
-end do
-
-!do ip=1,der%mesh%np
-!   write(123,*) real(hpsi(ip,1)), R_AIMAG(hpsi(ip,1))
-!enddo
-!stop
+     if(states_dim_get_spin_index(hm%d, ik2) /= states_dim_get_spin_index(hm%d, ik)) cycle
+     count = 0
+     do jst = scdm%st_start, scdm%st_end
+        count = count +1
+        if(hm%hf_st%occ(jst, ik2) < M_EPSILON) cycle
+        
+        ! in Hartree we just remove the self-interaction
+        if(hm%theory_level == HARTREE .and. jst /= ist) cycle
+!        if(hm%cmplxscl%space) psi2 = R_CONJ(psi2)
+        !
+        ! for scdm do product only in the local box
+        rho_l(:) = M_ZERO
+        ! the cube of rho is larger because of coulomb truncation, but here we only copy non-zero elements
+        do j=1,scdm%box_size*2+1
+           do k=1,scdm%box_size*2+1
+              do l=1,scdm%box_size*2+1
+                 ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+                 rho_l(ip) = R_CONJ(scdm%X(psi)(ip,count))*psi(scdm%box(j,k,l,count), 1)
+                 !                rho_l(ip) = psi2(scdm%box(j,k,l,jst),1)*psi(scdm%box(j,k,l,jst), 1)
+              enddo
+           enddo
+        enddo
+        !
+        call X(poisson_solve)(scdm%poisson, pot_l, rho_l, all_nodes=.false.)
+        !
+        ff = hm%hf_st%occ(jst, ik2)
+        if(hm%d%ispin == UNPOLARIZED) ff = M_HALF*ff
+        
+        do idim = 1, hm%hf_st%d%dim
+           !
+           do j=1,scdm%box_size*2+1
+              do k=1,scdm%box_size*2+1
+                 do l=1,scdm%box_size*2+1
+                    ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+                    hpsi(scdm%box(j,k,l,count),idim) = hpsi(scdm%box(j,k,l,count),idim) - exx_coef*ff*scdm%X(psi)(ip,count)*pot_l(ip)
+                 enddo
+              enddo
+           enddo
+        end do
+        !
+     end do
+  end do
   !
-  ! for allreduce use psi as temp and copy result here
-  ! NOTE this is dumb!!!
+  !
+  ! sum contributions to hpsi from all processes
+  temp_state_global(:,:) = M_ZERO
   if(der%mesh%parallel_in_domains) then
-     psi(:,1) = hpsi(:,1)
-     call MPI_Allreduce(psi, hpsi, der%mesh%np_global, R_MPITYPE, MPI_SUM, der%mesh%vp%comm, mpi_err)
+     temp_state_global(:,1) = hpsi(:,1)
+     call MPI_Allreduce(temp_state_global, hpsi, der%mesh%np_global, R_MPITYPE, MPI_SUM, der%mesh%vp%comm, mpi_err)
   endif
   !
   POP_SUB(X(scdm_exchange_operator))
