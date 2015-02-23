@@ -157,11 +157,17 @@ module scdm_m
     do i=1,3
        scdm%box_size = max(scdm%box_size,ceiling(scdm%rcut/der%mesh%spacing(i)))
     enddo
+    !
     if(scdm%root.and.scdm%verbose) then
        call messages_print_var_value(stdout,'SCDM box_size', scdm%box_size)
        call messages_print_var_value(stdout,'SCDM box_size[Ang]', scdm%box_size*der%mesh%spacing(1)*0.529177249)
     endif
     scdm%full_box = (2*(2*scdm%box_size+1))**3
+    !check if scdm is not bigger than fft-grid of full simualtion cell  
+    if(scdm%full_box.gt.der%mesh%np_global) then
+       message(1) = 'SCDM box larger than mesh, no point in using it'
+       call messages_fatal(1,only_root_writes = .true.)
+    endif
     dummy = 2*(2*scdm%box_size+1)*der%mesh%spacing(1)*0.529177249
     if(scdm%root.and.scdm%verbose) call messages_print_var_value(stdout, 'SCDM fullbox[Ang]', dummy)
     SAFE_ALLOCATE(scdm%box(scdm%box_size*2+1,scdm%box_size*2+1,scdm%box_size*2+1,scdm%st%nst))
@@ -186,7 +192,7 @@ module scdm_m
           SAFE_ALLOCATE(scdm%st%zpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
        ! localized SCDM states defined on box twice their size for coulomb truncation
-       SAFE_ALLOCATE(scdm%zpsi(scdm%full_box,scdm%lnst))
+       SAFE_ALLOCATE(scdm%zpsi(1:scdm%full_box,scdm%lnst))
     else ! real
        if(scdm%root) then
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%st%nst, scdm%st%d%nik))
@@ -194,7 +200,7 @@ module scdm_m
           SAFE_ALLOCATE(scdm%st%dpsi(der%mesh%np_global, scdm%st%d%dim, scdm%lnst, scdm%st%d%nik))
        endif
        ! localized SCDM states defined on box twice their size for coulomb truncation
-       SAFE_ALLOCATE(scdm%dpsi(scdm%full_box,scdm%lnst))
+       SAFE_ALLOCATE(scdm%dpsi(1:scdm%full_box,scdm%lnst))
     endif
     !
     SAFE_ALLOCATE(scdm%periodic(scdm%lnst))

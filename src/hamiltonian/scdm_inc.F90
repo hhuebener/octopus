@@ -7,7 +7,7 @@
     type(mesh_t), intent(in)     :: mesh
     type(scdm_t) :: scdm
     !
-    integer            :: i,j,k,l,v,count,ip, nval, INFO,i1, i2, i3, idim
+    integer            :: i,j,k,l,v,count,ip, nval, INFO,i1, i2, i3, idim, j1,j2,j3
     integer            ::JPVT(mesh%np_global)
     integer            :: icenter(3), ind_center
     !
@@ -255,7 +255,11 @@ integer :: nn(3)
                          endif
                       enddo
                    endif
-                   scdm%box(i1,i2,i3,count) = mesh%idx%lxyz_inv(ix(1),ix(2),ix(3))
+                   ! indices of box are 1-based
+                   j1=i1+scdm%box_size+1
+                   j2=i2+scdm%box_size+1
+                   j3=i3+scdm%box_size+1
+                   scdm%box(j1,j2,j3,count) = mesh%idx%lxyz_inv(ix(1),ix(2),ix(3))
                    !
                 enddo!i3
              enddo!i2

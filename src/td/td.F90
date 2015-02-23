@@ -239,8 +239,8 @@ contains
 
 !HH                                                                                                     
       ! in case use scdm localized states for exact exchange and request a new localization             
-!      if(hm%EXX) scdm_is_local = .false.
-scdm_is_local = .false.
+      if(hm%EXX) scdm_is_local = .false.
+!scdm_is_local = .false.
       ! time iterate the system, one time step.
       select case(td%dynamics)
       case(EHRENFEST)
