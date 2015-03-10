@@ -88,7 +88,7 @@ module scf_m
     VERB_NO      = 0,   &
     VERB_COMPACT = 1,   &
     VERB_FULL    = 3
-  
+
   !> some variables used for the SCF cycle
   type scf_t
     integer :: max_iter   !< maximum number of SCF iterations
@@ -160,7 +160,7 @@ contains
     !%Default 0.0
     !%Section SCF::Convergence
     !%Description
-    !% Absolute convergence of the density: 
+    !% Absolute convergence of the density:
     !%
     !% <math>\epsilon = \int {\rm d}^3r \vert \rho^{out}(\bf r) -\rho^{inp}(\bf r) \vert</math>.
     !%
@@ -173,10 +173,10 @@ contains
     !%Default 1e-5
     !%Section SCF::Convergence
     !%Description
-    !% Relative convergence of the density: 
+    !% Relative convergence of the density:
     !%
     !% <math>\epsilon = {1\over N} ConvAbsDens</math>.
-    !% 
+    !%
     !% <i>N</i> is the total number of electrons in the problem.  A
     !% zero value means do not use this criterion.
     !%End
@@ -329,7 +329,7 @@ contains
     !%Section SCF
     !%Description
     !% Performs the SCF cycle with the calculation restricted to the LCAO subspace.
-    !% This may be useful for systems with convergence problems (first do a 
+    !% This may be useful for systems with convergence problems (first do a
     !% calculation within the LCAO subspace, then restart from that point for
     !% an unrestricted calculation).
     !%End
@@ -431,7 +431,7 @@ contains
     type(hamiltonian_t),       intent(inout) :: hm !< Hamiltonian
     type(output_t),            intent(in)    :: outp
     logical,         optional, intent(in)    :: gs_run
-    integer,         optional, intent(in)    :: verbosity 
+    integer,         optional, intent(in)    :: verbosity
     integer,         optional, intent(out)   :: iters_done
     type(restart_t), optional, intent(in)    :: restart_load
     type(restart_t), optional, intent(in)    :: restart_dump
@@ -457,18 +457,18 @@ contains
     endif
 
     cmplxscl = st%cmplxscl%space
-  
+
     gs_run_ = .true.
     if(present(gs_run)) gs_run_ = gs_run
-    
+
     verbosity_ = VERB_FULL
     if(present(verbosity)) verbosity_ = verbosity
 
     if(ks%theory_level == CLASSICAL) then
       ! calculate forces
       if(scf%calc_force) call forces_calculate(gr, geo, hm, st)
-      
-      if(gs_run_) then 
+
+      if(gs_run_) then
         ! output final information
         call scf_write_static(STATIC_DIR, "info")
         call output_all(outp, gr, geo, st, hm, ks, STATIC_DIR)
@@ -524,14 +524,14 @@ contains
       end if
     end if
 
-    if(.not. cmplxscl) then      
+    if(.not. cmplxscl) then
       SAFE_ALLOCATE(rhoout(1:gr%fine%mesh%np, 1:scf%mixdim2, 1:nspin))
       SAFE_ALLOCATE(rhoin (1:gr%fine%mesh%np, 1:scf%mixdim2, 1:nspin))
 
       rhoin(1:gr%fine%mesh%np, 1, 1:nspin) = st%rho(1:gr%fine%mesh%np, 1:nspin)
       rhoout = M_ZERO
     else
-  
+
       SAFE_ALLOCATE(zrhoout(1:gr%fine%mesh%np, 1:scf%mixdim2, 1:nspin))
       SAFE_ALLOCATE(zrhoin (1:gr%fine%mesh%np, 1:scf%mixdim2, 1:nspin))
 
@@ -543,7 +543,7 @@ contains
     if (st%d%cdft) then
       rhoin(1:gr%fine%mesh%np, 2:scf%mixdim2, 1:nspin) = st%current(1:gr%fine%mesh%np, 1:gr%mesh%sb%dim, 1:nspin)
     end if
-    
+
     select case(scf%mix_field)
     case(MIXPOT)
       SAFE_ALLOCATE(vout(1:gr%mesh%np, 1:scf%mixdim2, 1:nspin))
@@ -596,13 +596,11 @@ contains
     itime = loct_clock()
     do iter = 1, scf%max_iter
       call profiling_in(prof, "SCF_CYCLE")
-! HH                                                                                                    
+! HH
 ! reset scdm flag
-       if(iter.gt.1) scdm_is_local = .false.
-!if(iter.gt.2) stop
-! this is stupid should be done in init                                                                 
+       scdm_is_local = .false.
+! this is stupid should be done in init and isnt even neede, except for .cube files
        scdm_geo = geo
-       scdm%iter = iter
 
       ! this initialization seems redundant but avoids improper optimization at -O3 by PGI 7 on chum,
       ! which would cause a failure of testsuite/linear_response/04-vib_modes.03-vib_modes_fd.inp
@@ -674,14 +672,14 @@ contains
       else
         call density_calc(st, gr, st%rho)
       end if
-      
+
       if(.not. cmplxscl) then
         rhoout(1:gr%fine%mesh%np, 1, 1:nspin) = st%rho(1:gr%fine%mesh%np, 1:nspin)
       else
         zrhoout(1:gr%fine%mesh%np, 1, 1:nspin) = st%zrho%Re(1:gr%fine%mesh%np, 1:nspin) +&
                                             M_zI * st%zrho%Im(1:gr%fine%mesh%np, 1:nspin)
       end if
-      
+
       if (hm%d%cdft) then
         call calc_physical_current(gr%der, st, st%current)
         rhoout(1:gr%mesh%np, 2:scf%mixdim2, 1:nspin) = st%current(1:gr%mesh%np, 1:gr%mesh%sb%dim, 1:nspin)
@@ -738,7 +736,7 @@ contains
       else
         scf%rel_ev = scf%abs_ev / abs(evsum_out)
       endif
-      
+
       scf%eigens%current_rel_dens_error = scf%rel_dens
 
       ! are we finished?
@@ -765,8 +763,8 @@ contains
           st%rho(1:gr%fine%mesh%np, 1:nspin) = rhonew(1:gr%fine%mesh%np, 1, 1:nspin)
         else
           call zmixing(scf%smix, zrhoin, zrhoout, zrhonew, zmf_dotp_aux)
-          st%zrho%Re(1:gr%fine%mesh%np, 1:nspin) =  real(zrhonew(1:gr%fine%mesh%np, 1, 1:nspin))                   
-          st%zrho%Im(1:gr%fine%mesh%np, 1:nspin) = aimag(zrhonew(1:gr%fine%mesh%np, 1, 1:nspin))                    
+          st%zrho%Re(1:gr%fine%mesh%np, 1:nspin) =  real(zrhonew(1:gr%fine%mesh%np, 1, 1:nspin))
+          st%zrho%Im(1:gr%fine%mesh%np, 1:nspin) = aimag(zrhonew(1:gr%fine%mesh%np, 1, 1:nspin))
         end if
         if (hm%d%cdft) st%current(1:gr%mesh%np,1:gr%mesh%sb%dim,1:nspin) = rhonew(1:gr%mesh%np, 2:scf%mixdim2, 1:nspin)
         call v_ks_calc(ks, hm, st, geo)
@@ -789,12 +787,12 @@ contains
       ! Are we asked to stop? (Whenever Fortran is ready for signals, this should go away)
       scf%forced_finish = clean_stop(mc%master_comm)
 
-      if (gs_run_ .and. present(restart_dump)) then 
+      if (gs_run_ .and. present(restart_dump)) then
         ! save restart information
         if ( (finish .or. (modulo(iter, outp%restart_write_interval) == 0) &
           .or. iter == scf%max_iter .or. scf%forced_finish)) then
 
-          call states_dump(restart_dump, st, gr, ierr, iter=iter) 
+          call states_dump(restart_dump, st, gr, ierr, iter=iter)
           if (ierr /= 0) then
             message(1) = 'Unable to write states wavefunctions.'
             call messages_warning(1)
@@ -833,7 +831,7 @@ contains
         if(present(iters_done)) iters_done = iter
         if(verbosity_ >= VERB_COMPACT) then
           write(message(1), '(a, i4, a)') 'Info: SCF converged in ', iter, ' iterations'
-          write(message(2), '(a)')        '' 
+          write(message(2), '(a)')        ''
           call messages_info(2)
         end if
         if(scf%lcao_restricted) call lcao_end(lcao)
@@ -841,7 +839,7 @@ contains
         exit
       end if
 
-      if(outp%output_interval /= 0 .and. gs_run_ .and. mod(iter, outp%output_interval) == 0) then  
+      if(outp%output_interval /= 0 .and. gs_run_ .and. mod(iter, outp%output_interval) == 0) then
         write(dirname,'(a,a,i4.4)') trim(outp%iter_dir),"scf.",iter
         call output_all(outp, gr, geo, st, hm, ks, dirname)
       end if
@@ -851,7 +849,7 @@ contains
         rhoin(1:gr%fine%mesh%np, 1, 1:nspin) = st%rho(1:gr%fine%mesh%np, 1:nspin)
       else
         zrhoin(1:gr%fine%mesh%np, 1, 1:nspin) = st%zrho%Re(1:gr%fine%mesh%np, 1:nspin) +&
-                                          M_zI * st%zrho%Im(1:gr%fine%mesh%np, 1:nspin)  
+                                          M_zI * st%zrho%Im(1:gr%fine%mesh%np, 1:nspin)
       end if
       if (hm%d%cdft) rhoin(1:gr%mesh%np, 2:scf%mixdim2, 1:nspin) = st%current(1:gr%mesh%np, 1:gr%mesh%sb%dim, 1:nspin)
       if (scf%mix_field == MIXPOT) then
@@ -874,7 +872,7 @@ contains
 
       call profiling_out(prof)
     end do !iter
-    
+
     if(scf%max_iter > 0 .and. scf%mix_field == MIXPOT) then
       call v_ks_calc(ks, hm, st, geo)
     endif
@@ -918,7 +916,7 @@ contains
       call states_write_eigenvalues(stdout, st%nst, st, gr%sb)
     endif
 
-    if(gs_run_) then 
+    if(gs_run_) then
       ! output final information
       call scf_write_static(STATIC_DIR, "info")
       call output_all(outp, gr, geo, st, hm, ks, STATIC_DIR)
@@ -961,7 +959,7 @@ contains
                ' abs_ev   = ', units_from_atomic(units_out%energy, scf%abs_ev), ' rel_ev   = ', scf%rel_ev
           write(message(2),'(23x,2(a,es9.2))') &
                ' abs_dens = ', scf%abs_dens, ' rel_dens = ', scf%rel_dens
-        end if      
+        end if
         ! write info about forces only if they are used as convergence criteria
         if (scf%conv_abs_force > M_ZERO) then
           write(message(3),'(23x,a,es9.2)') &
@@ -1004,7 +1002,7 @@ contains
         end if
 
         call messages_print_stress(stdout)
-        
+
       end if
 
       if ( verbosity_ == VERB_COMPACT ) then
@@ -1068,7 +1066,7 @@ contains
         write(iunit, '(1x)')
 
         if(cmplxscl .and. hm%energy%Imtotal < M_ZERO) then
-          write(message(1), '(3a,es18.6)') 'Lifetime [', trim(units_abbrev(units_out%time)), '] = ', & 
+          write(message(1), '(3a,es18.6)') 'Lifetime [', trim(units_abbrev(units_out%time)), '] = ', &
             units_from_atomic(units_out%time, - M_ONE/(M_TWO * hm%energy%Imtotal))
           call messages_info(1, iunit)
         end if
@@ -1130,7 +1128,7 @@ contains
               ff(1:geo%space%dim) = geo%atom(iatom)%f(1:geo%space%dim)
               torque(1:3) = torque(1:3) + dcross_product(rr, ff)
             end do
-            
+
           write(iunit,'(a14, 10f15.6)') ' Total torque', &
             (units_from_atomic(units_out%force*units_out%length, torque(idir)), idir = 1, 3)
 
@@ -1144,7 +1142,7 @@ contains
       POP_SUB(scf_run.scf_write_static)
     end subroutine scf_write_static
 
-  
+
     ! ---------------------------------------------------------
     subroutine calc_dipole(dipole)
       FLOAT, intent(out) :: dipole(:)

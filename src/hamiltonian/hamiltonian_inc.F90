@@ -526,14 +526,29 @@ subroutine X(scdm_exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
         do j=1,scdm%box_size*2+1
            do k=1,scdm%box_size*2+1
               do l=1,scdm%box_size*2+1
-                 ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+!                 ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+ip = (j-1)*((scdm%box_size*2+1))**2+(k-1)*((scdm%box_size*2+1)) + l
                  rho_l(ip) = R_CONJ(scdm%X(psi)(ip,count))*psi(scdm%box(j,k,l,count), 1)
                  !                rho_l(ip) = psi2(scdm%box(j,k,l,jst),1)*psi(scdm%box(j,k,l,jst), 1)
               enddo
            enddo
         enddo
         !
+!rho_l(:) = 1.
+!if(ist.eq.2) then
+!   do j=1,scdm%full_box
+!      write(124,*) rho_l(j)
+!   enddo
+!end if
         call X(poisson_solve)(scdm%poisson, pot_l, rho_l, all_nodes=.false.)
+
+!HH error here: NaN for ist=2
+!if(ist.eq.2) then
+   do j=1,scdm%full_box
+!      write(123,*) real(pot_l(j)), R_AIMAG(pot_l(j))
+      if(.not.(real(pot_l(j)).gt.0.or.real(pot_l(j)).le.0)) stop
+   enddo
+!end if
         !
         ff = hm%hf_st%occ(jst, ik2)
         if(hm%d%ispin == UNPOLARIZED) ff = M_HALF*ff
@@ -543,7 +558,8 @@ subroutine X(scdm_exchange_operator) (hm, der, psi, hpsi, ist, ik, exx_coef)
            do j=1,scdm%box_size*2+1
               do k=1,scdm%box_size*2+1
                  do l=1,scdm%box_size*2+1
-                    ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+!                    ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+ip = (j-1)*((scdm%box_size*2+1))**2+(k-1)*((scdm%box_size*2+1)) + l
                     hpsi(scdm%box(j,k,l,count),idim) = hpsi(scdm%box(j,k,l,count),idim) - exx_coef*ff*scdm%X(psi)(ip,count)*pot_l(ip)
                  enddo
               enddo

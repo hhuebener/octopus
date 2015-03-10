@@ -202,6 +202,7 @@ contains
     ! store the Fourier transform of the Coulomb interaction
     SAFE_ALLOCATE(fft_Coulb_FS(1:cube%fs_n_global(1), 1:cube%fs_n_global(2), 1:cube%fs_n_global(3)))
     fft_Coulb_FS = M_ZERO
+
     temp(1:3) = M_TWO*M_PI/(db(1:3)*mesh%spacing(1:3))
 
     do ix = 1, cube%fs_n_global(1)
@@ -212,6 +213,8 @@ contains
           ixx(3) = pad_feq(iz, db(3), .true.)
 
           call poisson_fft_gg_transform(ixx, temp, mesh%sb, this%qq, gg, modg2)
+!HH
+if(cube%fft%library.eq.FFTLIB_NFFT) modg2=cube%Lfs(ix,1)**2+cube%Lfs(iy,2)**2+cube%Lfs(iz,3)**2
 
           if(abs(modg2) > M_EPSILON) then
             fft_Coulb_FS(ix, iy, iz) = M_ONE/modg2
@@ -453,7 +456,11 @@ contains
           ixx(3) = pad_feq(iz, db(3), .true.)
             
           call poisson_fft_gg_transform(ixx, temp, mesh%sb, this%qq, gg, modg2)
-
+!HH
+if(cube%fft%library.eq.FFTLIB_NFFT) then
+   modg2=cube%Lfs(ix,1)**2+cube%Lfs(iy,2)**2+cube%Lfs(iz,3)**2
+    r_c = default_r_c*M_TWO
+endif
           if(abs(modg2) > M_EPSILON) then
             select case(kernel)
             case(POISSON_FFT_KERNEL_SPH)

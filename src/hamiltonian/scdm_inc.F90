@@ -273,7 +273,8 @@ integer :: nn(3)
           do k=1,scdm%box_size*2+1
              do l=1,scdm%box_size*2+1
                 ! map into the twice larger box
-                ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+!                ip = (j-1)*(2*(scdm%box_size*2+1))**2+(k-1)*(2*(scdm%box_size*2+1)) + l
+ip = (j-1)*((scdm%box_size*2+1))**2+(k-1)*((scdm%box_size*2+1)) + l
                 scdm%X(psi)(ip,count) = scdm%st%X(psi)(scdm%box(j,k,l,count),st%d%dim,count,scdm%st%d%nik)
              enddo
           enddo

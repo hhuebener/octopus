@@ -121,13 +121,16 @@ module scdm_m
     integer,  allocatable:: istart(:)
     integer,  allocatable:: iend(:)
     integer,  allocatable:: ilsize(:)
-    FLOAT :: dummy
+    integer :: box(3)
+    FLOAT :: dummy, enlarge
     !
     ! check if already initialized
     if(scdm_is_init) return
     !
     if(st%lnst.ne.st%nst) call messages_not_implemented("SCDM with state parallelization")
     if(st%d%nik.gt.1) call messages_not_implemented("SCDM with k-point sampling")
+    if(der%mesh%sb%periodic_dim.gt.0.and.der%mesh%sb%periodic_dim.ne.3) &
+                   call messages_not_implemented("SCDM with mixed-periodicity")  
     !
 !    scdm%root = (der%mesh%vp%rank == 0)
     call MPI_Comm_Rank( der%mesh%mpi_grp%comm, rank, mpi_err)
@@ -162,7 +165,8 @@ module scdm_m
        call messages_print_var_value(stdout,'SCDM box_size', scdm%box_size)
        call messages_print_var_value(stdout,'SCDM box_size[Ang]', scdm%box_size*der%mesh%spacing(1)*0.529177249)
     endif
-    scdm%full_box = (2*(2*scdm%box_size+1))**3
+!    scdm%full_box = (2*(2*scdm%box_size+1))**3
+scdm%full_box = (2*scdm%box_size+1)**3
     !check if scdm is not bigger than fft-grid of full simualtion cell  
     if(scdm%full_box.gt.der%mesh%np_global) then
        message(1) = 'SCDM box larger than mesh, no point in using it'
@@ -222,16 +226,21 @@ module scdm_m
     ! set index type of mesh
     scdm%boxmesh%idx%is_hypercube = .false.
     ! mesh has to be centered around zero with left overhang otherwise mesh_cub_map doesn't seem to work
-    scdm%boxmesh%idx%nr(1,:) = -(scdm%box_size*2+1)
-    scdm%boxmesh%idx%nr(2,:) =  (scdm%box_size*2+1)-1
+!    scdm%boxmesh%idx%nr(1,:) = -(scdm%box_size*2+1)
+!    scdm%boxmesh%idx%nr(2,:) =  (scdm%box_size*2+1)-1
+scdm%boxmesh%idx%nr(1,:) = -(scdm%box_size)
+scdm%boxmesh%idx%nr(2,:) =  (scdm%box_size) 
     !
     scdm%boxmesh%idx%dim = 3
     scdm%boxmesh%idx%ll(:) = scdm%boxmesh%idx%nr(2,:) - scdm%boxmesh%idx%nr(1,:) + 1
+!???
     scdm%boxmesh%idx%enlarge(:) = 0
     SAFE_ALLOCATE(scdm%boxmesh%idx%lxyz(scdm%boxmesh%np,scdm%boxmesh%idx%dim))
     ! need to copy indices because otherwise line gets too long (precompiler???)
-    i=-(scdm%box_size*2+1)
-    j=(scdm%box_size*2+1)-1
+!    i=-(scdm%box_size*2+1)
+!    j=(scdm%box_size*2+1)-1
+i=-(scdm%box_size)
+j=(scdm%box_size)
     SAFE_ALLOCATE(scdm%boxmesh%idx%lxyz_inv(i:j,i:j,i:j))
     !
     ip = 0
@@ -252,8 +261,29 @@ module scdm_m
     ! instead,this should be used to enlarge the box, but then need to keep track of dimension:
     !call mesh_double_box(scdm%boxmesh%sb, scdm%boxmesh, 2._8, temp)
     !
-    call cube_init(scdm%boxcube, scdm%boxmesh%idx%ll, scdm%boxmesh%sb, &
-               fft_type=FFT_REAL, fft_library=FFTLIB_FFTW, dont_optimize = .true.)
+!    call cube_init(scdm%boxcube, scdm%boxmesh%idx%ll, scdm%boxmesh%sb, &
+!               fft_type=FFT_REAL, fft_library=FFTLIB_FFTW, dont_optimize = .true.)
+ 
+    ! without nfft we have to double the box 
+#ifndef HAVE_NFFT
+   if(der%mesh%sb%periodic_dim.gt.0) call messages_not_implemented("periodic SSCDM  without NFFT library")  
+   box(:) = scdm%boxmesh%idx%ll(:)*2
+   call cube_init(scdm%boxcube, box, scdm%boxmesh%sb,fft_type=FFT_REAL, fft_library=FFTLIB_FFTW)
+# else ! nfft case
+    box(:) = scdm%boxmesh%idx%ll(:) +2
+    if(der%mesh%sb%periodic_dim.eq.3) then
+       !enlargement factor to fit he simulationbox boundary
+! ??? not sure
+       enlarge = der%mesh%sb%lsize(1)/(2*scdm%box_size+1)
+       !
+    else ! non-periodic case
+       enlarge = M_TWO
+    endif
+    call cube_init(scdm%boxcube, box, scdm%boxmesh%sb, &
+               fft_type=FFT_COMPLEX, fft_library=FFTLIB_NFFT, &
+               tp_enlarge=enlarge,spacing=der%mesh%spacing)
+!call cube_init(scdm%boxcube, box*2, scdm%boxmesh%sb,fft_type=FFT_REAL, fft_library=FFTLIB_FFTW)
+#endif 
     !
     ! Joseba recommends including this
     !if (der%mesh%parallel_in_domains .and. this%cube%parallel_in_domains) then
@@ -264,6 +294,7 @@ module scdm_m
     ! this replictaes poisson_kernel_init()
     scdm%poisson%poisson_soft_coulomb_param = M_ZERO
     call poisson_fft_init(scdm%poisson_fft, scdm%boxmesh, scdm%boxcube, kernel=POISSON_FFT_KERNEL_SPH)
+!call poisson_fft_init(scdm%poisson_fft, scdm%boxmesh, scdm%boxcube, kernel=POISSON_FFT_KERNEL_NOCUT)
     !
     ! create poisson object
     SAFE_ALLOCATE(scdm%poisson%der)
